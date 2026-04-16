@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Play, Trash2, FileText, Download, Settings, AlertCircle, CheckCircle2, Info, Code, Edit3 } from 'lucide-react';
 import { jsPDF } from 'jspdf';
+import 'svg2pdf.js';
 import { renderExpression, RenderResult } from './lib/backend';
 
 export default function App() {
@@ -9,6 +10,8 @@ export default function App() {
   const [variation, setVariation] = useState('Medium');
   const [seed, setSeed] = useState('');
   const [format, setFormat] = useState('SVG');
+  const [pageStyle, setPageStyle] = useState('Blank');
+  const [inkColor, setInkColor] = useState('#333333');
   const [showSettings, setShowSettings] = useState(false);
   
   const [isRendering, setIsRendering] = useState(false);
@@ -30,7 +33,7 @@ export default function App() {
 
   const handleRender = async () => {
     setIsRendering(true);
-    const res = await renderExpression(expression, mode, variation, seed ? parseInt(seed) : null, format);
+    const res = await renderExpression(expression, mode, variation, seed ? parseInt(seed) : null, format, pageStyle, inkColor);
     setResult(res);
     setIsRendering(false);
   };
@@ -44,25 +47,84 @@ export default function App() {
     document.body.removeChild(a);
   };
 
-  const handleDownload = () => {
-    if (!result?.svgContent) return;
+  const handleDownload = async () => {
+    if (!result?.svgPages || result.svgPages.length === 0) return;
 
     if (format === 'SVG') {
-      const blob = new Blob([result.svgContent], { type: 'image/svg+xml' });
+      // For SVG, we can just download the first page or combine them.
+      // For simplicity, download the first page if there's only one, or zip them (but we don't have JSZip).
+      // Let's just download the first page for SVG.
+      const blob = new Blob([result.svgPages[0]], { type: 'image/svg+xml' });
       const url = URL.createObjectURL(blob);
       triggerDownload(url, `handwritten_math_${Date.now()}.svg`);
       URL.revokeObjectURL(url);
-    } else if (format === 'PNG' || format === 'PDF') {
+    } else if (format === 'PDF') {
+      // Create a multi-page PDF using svg2pdf
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: [800, 1130] // Our PAGE_WIDTH and PAGE_HEIGHT
+      });
+
+      // Load and register the custom font
+      try {
+        const fontResponse = await fetch('/WaHandwriting-Regular.ttf');
+        const fontBlob = await fontResponse.blob();
+        const reader = new FileReader();
+        const fontBase64 = await new Promise<string>((resolve) => {
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            resolve(result.split(',')[1]);
+          };
+          reader.readAsDataURL(fontBlob);
+        });
+        
+        pdf.addFileToVFS('WaHandwriting-Regular.ttf', fontBase64);
+        pdf.addFont('WaHandwriting-Regular.ttf', 'WaHandwriting-Regular', 'normal');
+        pdf.addFont('WaHandwriting-Regular.ttf', 'WaHandwriting-Regular', 'bold');
+        pdf.addFont('WaHandwriting-Regular.ttf', 'WaHandwriting-Regular', 'italic');
+        pdf.setFont('WaHandwriting-Regular');
+      } catch (e) {
+        console.error("Failed to load custom font for PDF:", e);
+      }
+
+      for (let i = 0; i < result.svgPages.length; i++) {
+        if (i > 0) {
+          pdf.addPage([800, 1130], 'portrait');
+        }
+        
+        // Create a temporary DOM element to parse the SVG
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(result.svgPages[i], 'image/svg+xml');
+        const svgElement = svgDoc.documentElement;
+        
+        // We need to append it to the body temporarily for svg2pdf to work correctly with fonts
+        svgElement.style.position = 'absolute';
+        svgElement.style.left = '-9999px';
+        document.body.appendChild(svgElement);
+        
+        await pdf.svg(svgElement, {
+          x: 0,
+          y: 0,
+          width: 800,
+          height: 1130
+        });
+        
+        document.body.removeChild(svgElement);
+      }
+      
+      pdf.save(`handwritten_math_${Date.now()}.pdf`);
+    } else if (format === 'PNG') {
+      // For PNG, just render the first page
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       const img = new Image();
-      const svgBlob = new Blob([result.svgContent], { type: 'image/svg+xml;charset=utf-8' });
+      const svgBlob = new Blob([result.svgPages[0]], { type: 'image/svg+xml;charset=utf-8' });
       const url = URL.createObjectURL(svgBlob);
 
       img.onload = () => {
-        // Use the actual dimensions of the SVG
         const width = img.width || 800;
-        const height = img.height || 200;
+        const height = img.height || 1130;
         
         canvas.width = width;
         canvas.height = height;
@@ -74,18 +136,7 @@ export default function App() {
         }
 
         const pngDataUrl = canvas.toDataURL('image/png');
-
-        if (format === 'PNG') {
-          triggerDownload(pngDataUrl, `handwritten_math_${Date.now()}.png`);
-        } else if (format === 'PDF') {
-          const pdf = new jsPDF({
-            orientation: width > height ? 'landscape' : 'portrait',
-            unit: 'px',
-            format: [width, height]
-          });
-          pdf.addImage(pngDataUrl, 'PNG', 0, 0, width, height);
-          pdf.save(`handwritten_math_${Date.now()}.pdf`);
-        }
+        triggerDownload(pngDataUrl, `handwritten_math_${Date.now()}.png`);
         URL.revokeObjectURL(url);
       };
       img.src = url;
@@ -175,6 +226,26 @@ export default function App() {
                     <option>PDF</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Page Style</label>
+                  <select value={pageStyle} onChange={(e) => setPageStyle(e.target.value)} className="w-full p-2 border border-gray-300 rounded-md text-sm">
+                    <option>Blank</option>
+                    <option>Lined</option>
+                    <option>Grid</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Ink Color</label>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="color" 
+                      value={inkColor} 
+                      onChange={(e) => setInkColor(e.target.value)} 
+                      className="w-8 h-8 rounded cursor-pointer border border-gray-300 p-0.5" 
+                    />
+                    <span className="text-sm text-gray-600 font-mono">{inkColor}</span>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -219,14 +290,17 @@ export default function App() {
                   <CheckCircle2 className="w-5 h-5" /> {result.message}
                 </div>
                 
-                <div className="flex-1 border border-gray-200 rounded-xl overflow-hidden bg-white shadow-inner relative min-h-[300px] flex items-center justify-center p-4">
-                  {result.svgContent ? (
-                    <div 
-                      className="w-full h-full flex items-center justify-center overflow-auto [&>svg]:max-w-full [&>svg]:max-h-full [&>svg]:h-auto [&>svg]:w-auto"
-                      dangerouslySetInnerHTML={{ __html: result.svgContent }}
-                    />
+                <div className="flex-1 border border-gray-200 rounded-xl overflow-hidden bg-gray-100 shadow-inner relative min-h-[300px] flex flex-col items-center p-4 gap-4 overflow-y-auto">
+                  {result.svgPages && result.svgPages.length > 0 ? (
+                    result.svgPages.map((pageSvg, idx) => (
+                      <div 
+                        key={idx}
+                        className="w-full max-w-[800px] bg-white shadow-md rounded-sm flex-shrink-0 [&>svg]:w-full [&>svg]:h-auto"
+                        dangerouslySetInnerHTML={{ __html: pageSvg }}
+                      />
+                    ))
                   ) : (
-                    <div className="text-center text-gray-500">
+                    <div className="text-center text-gray-500 m-auto">
                       <p className="font-medium">Preview not available</p>
                     </div>
                   )}

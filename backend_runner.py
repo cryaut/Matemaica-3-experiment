@@ -15,14 +15,12 @@ def main():
         variation_level = req.get("variation_level", "Medium")
         seed = req.get("seed", None)
         output_format = req.get("output_format", "SVG")
+        page_style = req.get("page_style", "Blank")
+        ink_color = req.get("ink_color", "#333333")
         
-        result = render_expression(expression, input_mode, variation_level, seed, output_format)
+        result = render_expression(expression, input_mode, variation_level, seed, output_format, page_style, ink_color)
         
-        # We need to return the actual SVG content to the Node server
-        if result.get("output_files", {}).get("svg"):
-            with open(result["output_files"]["svg"], "r", encoding="utf-8") as f:
-                result["svg_content"] = f.read()
-                
+        # We don't read from files anymore, the backend returns the content directly
         print(json.dumps(result))
     except Exception as e:
         traceback.print_exc(file=sys.stderr)

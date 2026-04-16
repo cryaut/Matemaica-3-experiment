@@ -5,7 +5,7 @@ from latex_parser import parse_latex_math, ParseError
 from document_parser import parse_document
 from layout_engine import layout_document, layout_ast
 
-def render_expression(expression: str, input_mode: str, variation_level: str, seed: int | None, output_format: str) -> dict:
+def render_expression(expression: str, input_mode: str, variation_level: str, seed: int | None, output_format: str, page_style: str = "Blank", ink_color: str = "#333333") -> dict:
     """
     Backend stub for the Handwritten Math Rendering System.
     Parses LaTeX into AST and uses the 2D layout engine to generate SVG.
@@ -35,7 +35,7 @@ def render_expression(expression: str, input_mode: str, variation_level: str, se
             is_doc = any(marker in expression for marker in [
                 '\\[', '\\(', '\\textbf', '\\section', '\\subsection', 
                 '\\begin', '\\itemize', '\\enumerate', '$$', '\\item',
-                '\\text{', '\\mathrm{', '\\textit{'
+                '\\text{', '\\mathrm{', '\\textit{', '\\newpage', '\\newage'
             ])
             
             if not is_doc:
@@ -43,26 +43,30 @@ def render_expression(expression: str, input_mode: str, variation_level: str, se
                 # Math expressions usually have operators and few spaces
                 space_count = expression.count(' ')
                 if space_count > 2:
-                    # Check for words (3+ letters)
-                    words = [w for w in expression.split() if len(w) > 2 and w.isalpha()]
-                    if len(words) >= 2:
+                    # Check for words (2+ letters)
+                    import re
+                    words = re.findall(r'\b[a-zA-Z]{2,}\b', expression)
+                    math_symbols_count = sum(1 for c in expression if c in "_^\\=+-*/")
+                    if len(words) > 3 and math_symbols_count < len(words):
                         is_doc = True
             
             if is_doc:
                 doc_ast = parse_document(expression)
-                layout = layout_document(doc_ast, max_width=800, scale=1.0)
+                pages = layout_document(doc_ast, max_width=800, scale=1.0)
                 is_document_mode = True
             else:
                 # Pure math expression
                 ast = parse_latex_math(expression)
                 layout = layout_ast(ast, scale=1.0)
+                pages = [layout]
                 is_document_mode = False
         else:
             ast = parse_latex_math(expression)
             layout = layout_ast(ast, scale=1.0)
+            pages = [layout]
             is_document_mode = False
             
-        if not layout:
+        if not pages:
             raise Exception("Layout engine failed to produce a result.")
             
     except Exception as e:
@@ -77,67 +81,48 @@ def render_expression(expression: str, input_mode: str, variation_level: str, se
             "notes": [f"Parse Error: {str(e)}"]
         }
 
-    # Add some padding around the bounding box
-    padding = 40
-    view_width = max(layout.width + padding * 2, 800)
-    view_height = layout.height + padding * 2
-    
-    # Render SVG elements
-    svg_inner = layout.render(offset_x=padding, offset_y=padding)
-
-    # Embed the font as base64
-    font_def = ""
-    font_path = os.path.join(os.getcwd(), "public", "WaHandwriting-Regular.ttf")
-    if os.path.exists(font_path):
-        import base64
-        with open(font_path, "rb") as f:
-            font_data = base64.b64encode(f.read()).decode('utf-8')
-        font_def = f"""
-        <defs>
-            <style>
-                @font-face {{
-                    font-family: 'WaHandwriting-Regular';
-                    src: url(data:font/ttf;base64,{font_data}) format('truetype');
-                }}
-            </style>
-        </defs>
-        """
-
-    # STRICT OUTPUT RULES: No watermark, no placeholder text, no simulated labels
-    svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {view_width} {view_height}" width="{view_width}" height="{view_height}">
-        {font_def}
-        <rect width="100%" height="100%" fill="#fafafa" rx="10"/>
-        {svg_inner}
-    </svg>"""
-
-    output_filename = f"output.{output_format.lower()}"
-    output_path = os.path.join(os.getcwd(), output_filename)
-    preview_path = os.path.join(os.getcwd(), "preview.svg")
-    
-    # Always write an SVG for the preview panel
-    with open(preview_path, "w", encoding="utf-8") as f:
-        f.write(svg_content)
+    svg_pages = []
+    for page in pages:
+        if getattr(page, 'is_page', False):
+            view_width = page.width
+            view_height = page.height
+            svg_inner = page.render(offset_x=0, offset_y=0, page_style=page_style)
+            bg_rect = f'<rect width="100%" height="100%" fill="#ffffff" />'
+        else:
+            padding = 40
+            view_width = max(page.width + padding * 2, 800)
+            view_height = max(page.height + padding * 2, 400)
+            svg_inner = page.render(offset_x=padding + 60, offset_y=padding, page_style="Blank") # Shift math right to avoid margin
+            
+            bg_lines = ""
+            if page_style == "Lined":
+                for y in range(30, int(view_height), 30):
+                    bg_lines += f'<line x1="0" y1="{y}" x2="{view_width}" y2="{y}" stroke="#93c5fd" stroke-width="1"/>\n'
+                bg_lines += f'<line x1="80" y1="0" x2="80" y2="{view_height}" stroke="#fca5a5" stroke-width="1.5"/>\n'
+            elif page_style == "Grid":
+                for y in range(30, int(view_height), 30):
+                    bg_lines += f'<line x1="0" y1="{y}" x2="{view_width}" y2="{y}" stroke="#e5e7eb" stroke-width="1"/>\n'
+                for x in range(30, int(view_width), 30):
+                    bg_lines += f'<line x1="{x}" y1="0" x2="{x}" y2="{view_height}" stroke="#e5e7eb" stroke-width="1"/>\n'
+                    
+            bg_rect = f'<rect width="100%" height="100%" fill="#fafafa" rx="10"/>\n{bg_lines}'
+            
+        svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {view_width} {view_height}" width="{view_width}" height="{view_height}">
+            {bg_rect}
+            {svg_inner}
+        </svg>"""
         
+        # Apply ink color
+        if ink_color != "#333333":
+            svg_content = svg_content.replace('stroke="#333"', f'stroke="{ink_color}"')
+            svg_content = svg_content.replace('fill="#333"', f'fill="{ink_color}"')
+            
+        svg_pages.append(svg_content)
+
     notes = ["Rendered successfully using 2D Layout Engine."]
     if is_document_mode:
         notes.append("Detected document/text mode. Automatic line wrapping applied.")
     
-    if output_format == "SVG":
-        with open(output_path, "w", encoding="utf-8") as f:
-            f.write(svg_content)
-    else:
-        try:
-            import cairosvg
-            if output_format == "PNG":
-                cairosvg.svg2png(bytestring=svg_content.encode('utf-8'), write_to=output_path)
-            elif output_format == "PDF":
-                cairosvg.svg2pdf(bytestring=svg_content.encode('utf-8'), write_to=output_path)
-        except Exception as e:
-            # Handle generative function errors cleanly
-            notes.append(f"Generative function error (cairosvg missing or failed): {str(e)}. Falling back to SVG output.")
-            output_path = preview_path
-            output_format = "SVG"
-
     # 4. Return Strict JSON Structure
     return {
         "status": "ok",
@@ -153,9 +138,8 @@ def render_expression(expression: str, input_mode: str, variation_level: str, se
             "symbols_used": len(expression.replace(" ", ""))
         },
         "output_files": {
-            "svg": preview_path,
-            "pdf": output_path if output_format == "PDF" else "",
-            "png": output_path if output_format == "PNG" else ""
+            "svg": "" # We don't write files anymore, we send the content directly
         },
+        "svg_pages": svg_pages,
         "notes": notes
     }

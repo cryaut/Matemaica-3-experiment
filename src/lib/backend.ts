@@ -1,7 +1,7 @@
 export interface RenderResult {
   status: 'done' | 'error';
   message: string;
-  svgContent?: string;
+  svgPages?: string[];
   symbolsUsed?: number;
   detectedStructures?: string[];
 }
@@ -11,7 +11,9 @@ export async function renderExpression(
   mode: string,
   variation: string,
   seed: number | null,
-  format: string
+  format: string,
+  pageStyle: string = 'Blank',
+  inkColor: string = '#333333'
 ): Promise<RenderResult> {
   try {
     const response = await fetch('/api/render', {
@@ -24,7 +26,9 @@ export async function renderExpression(
         input_mode: mode,
         variation_level: variation,
         seed,
-        output_format: format
+        output_format: format,
+        page_style: pageStyle,
+        ink_color: inkColor
       }),
     });
 
@@ -44,7 +48,7 @@ export async function renderExpression(
     return {
       status: 'done',
       message: data.notes ? data.notes[0] : 'Rendered successfully',
-      svgContent: data.svg_content,
+      svgPages: data.svg_pages,
       symbolsUsed: data.render_plan?.symbols_used || 0,
       detectedStructures: data.document_structure?.detected || []
     };
