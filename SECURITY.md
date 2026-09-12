@@ -21,3 +21,9 @@ The previously exposed Gemini key must still be revoked in Google AI Studio or G
 - Upgrade and re-audit JavaScript and Python dependencies before release.
 
 Until these items are addressed, keep the service on a trusted local network and do not accept untrusted public traffic.
+
+## Repository history
+
+- The GitHub repository currently exposes only the `main` branch and has no tags or releases.
+- Legacy cache files and local request captures were removed from the reachable Git history.
+- If a secret is ever committed, revoke it first and rewrite the affected history before sharing the repository.
