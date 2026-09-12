@@ -11,6 +11,49 @@ class Token:
 class ParseError(Exception):
     pass
 
+SYMBOL_COMMANDS = {
+    '\\partial', '\\nabla', '\\infty', '\\to', '\\sin', '\\cos', '\\tan',
+    '\\cot', '\\sec', '\\csc', '\\arcsin', '\\arccos', '\\arctan',
+    '\\sinh', '\\cosh', '\\tanh', '\\sech', '\\csch', '\\coth',
+    '\\log', '\\ln', '\\exp', '\\min', '\\max', '\\sup', '\\inf',
+    '\\arg', '\\det', '\\dim', '\\ker', '\\deg', '\\gcd', '\\Pr',
+    '\\limsup', '\\liminf', '\\div', '\\times', '\\cdot', '\\approx',
+    '\\sim', '\\simeq', '\\cong', '\\equiv', '\\asymp', '\\propto',
+    '\\ast', '\\star', '\\circ', '\\bullet', '\\oplus', '\\ominus',
+    '\\otimes', '\\oslash', '\\odot', '\\mp', '\\pm', '\\dagger',
+    '\\ddagger', '\\wr', '\\alpha', '\\beta', '\\gamma', '\\Gamma',
+    '\\delta', '\\Delta', '\\epsilon', '\\varepsilon', '\\zeta', '\\eta',
+    '\\theta', '\\vartheta', '\\Theta', '\\iota', '\\kappa', '\\lambda',
+    '\\Lambda', '\\mu', '\\nu', '\\xi', '\\Xi', '\\pi', '\\varpi', '\\Pi',
+    '\\rho', '\\varrho', '\\sigma', '\\varsigma', '\\Sigma', '\\tau',
+    '\\upsilon', '\\Upsilon', '\\phi', '\\varphi', '\\Phi', '\\chi',
+    '\\psi', '\\Psi', '\\omega', '\\Omega', '\\ell', '\\hbar', '\\Re',
+    '\\Im', '\\forall', '\\exists', '\\nexists', '\\emptyset',
+    '\\varnothing', '\\aleph', '\\in', '\\notin', '\\ni', '\\subset',
+    '\\subseteq', '\\supset', '\\supseteq', '\\cup', '\\cap', '\\setminus',
+    '\\land', '\\lor', '\\neg', '\\therefore', '\\because', '\\ll', '\\gg',
+    '\\prec', '\\succ', '\\preceq', '\\succeq', '\\models', '\\perp',
+    '\\parallel', '\\diracdelta', '\\imath', '\\jmath', '\\quad',
+    '\\qquad', '\\,', '\\;', '\\:', '\\!', '\\|', '\\ge', '\\le', '\\geq',
+    '\\leq', '\\Rightarrow', '\\Longrightarrow', '\\longrightarrow',
+    '\\Leftarrow', '\\Leftrightarrow', '\\rightarrow', '\\leftarrow',
+    '\\leftrightarrow', '\\longleftarrow', '\\longleftrightarrow',
+    '\\Longleftarrow', '\\Longleftrightarrow', '\\mapsto',
+    '\\hookrightarrow', '\\hookleftarrow', '\\uparrow', '\\downarrow',
+    '\\updownarrow', '\\Uparrow', '\\Downarrow', '\\Updownarrow',
+    '\\leftharpoonup', '\\rightharpoonup', '\\leftharpoondown',
+    '\\rightharpoondown', '\\neq', '\\{', '\\}', '\\langle', '\\rangle',
+    '\\mid', '\\implies', '\\dots', '\\ldots', '\\cdots', '\\ddots',
+    '\\vdots', '\\lt', '\\gt', '\\colon', '\\backslash'
+}
+
+ACCENT_COMMANDS = {
+    '\\vec', '\\mathbf', '\\mathrm', '\\mathit', '\\mathsf', '\\mathtt',
+    '\\hat', '\\bar', '\\overline', '\\underline', '\\tilde', '\\dot',
+    '\\ddot', '\\breve', '\\check', '\\acute', '\\grave', '\\mathbb',
+    '\\mathcal', '\\mathfrak'
+}
+
 # Token specifications
 TOKEN_SPEC = [
     ('TEXT_MODE', r'\\(?:text|textbf|textit|mathrm|intertext)\s*\{.*?\}|\\(?:text|textbf|textit|mathrm|intertext)\s*\(.*?\)'),
@@ -30,6 +73,7 @@ TOKEN_SPEC = [
     ('UNDERSCORE', r'_'),
     ('COMMA', r','),
     ('COMMENT', r'%.*'),
+    ('PRIME', r"'+"),
     ('WS', r'\s+'),
     ('MISC', r'.'),
 ]
@@ -50,9 +94,10 @@ def tokenize(code: str) -> List[Token]:
             continue
             
         # Check for \text{...} or \text(...)
-        m = re.match(r'\\(?:text|textbf|textit|mathrm|intertext)\s*([{(])', code[i:])
+        m = re.match(r'\\(text|textbf|textit|mathrm|intertext)\s*([{(])', code[i:])
         if m:
-            start_char = m.group(1)
+            command_name = m.group(1)
+            start_char = m.group(2)
             end_char = '}' if start_char == '{' else ')'
             start_idx = i + m.end()
             brace_count = 1
@@ -69,7 +114,8 @@ def tokenize(code: str) -> List[Token]:
                         break
                 j += 1
             content = code[start_idx:j]
-            tokens.append(Token('TEXT_MODE', content))
+            token_value = f"\\intertext{{{content}}}" if command_name == "intertext" else content
+            tokens.append(Token('TEXT_MODE', token_value))
             i = j + 1 if j < len(code) else len(code)
             continue
             
@@ -202,7 +248,7 @@ class LatexMathParser:
             return None
         return {"type": "sequence", "items": nodes}
 
-    def parse_item(self, break_on: Optional[Set[str]] = None, stop_condition: Optional[Callable[[], bool]] = None) -> Optional[Dict[str, Any]]:
+    def parse_item(self, break_on: Optional[Set[Set[str]]] = None, stop_condition: Optional[Callable[[], bool]] = None, allow_postfix: bool = True) -> Optional[Dict[str, Any]]:
         """Parses a single mathematical item (atom, command, group) and its postfix scripts."""
         if break_on is None: break_on = set()
         tok = self.current()
@@ -235,7 +281,7 @@ class LatexMathParser:
                 arg = self.parse_required_argument()
                 # We can just treat it as a group but maybe with a text style
                 node = {"type": "text_mode", "content": arg}
-            elif tok.value in ('\\vec', '\\mathbf', '\\hat', '\\dot', '\\ddot', '\\mathbb', '\\mathcal'):
+            elif tok.value in ACCENT_COMMANDS:
                 self.consume()
                 arg = self.parse_required_argument()
                 node = {"type": "accent", "name": tok.value, "body": arg}
@@ -262,16 +308,23 @@ class LatexMathParser:
                     self.consume()
                 return None
             elif tok.value in ('\\big', '\\Big', '\\bigg', '\\Bigg', '\\bigl', '\\Bigl', '\\biggl', '\\Biggl', '\\bigr', '\\Bigr', '\\biggr', '\\Biggr'):
+                cmd = tok.value
                 self.consume()
-                node = self.parse_item(break_on, stop_condition)
+                next_tok = self.current()
+                # If the next token is a brace/bracket/paren, treat it as a symbol, not a group starter
+                if next_tok.type in ('LPAREN', 'RPAREN', 'LBRACKET', 'RBRACKET', 'LBRACE', 'RBRACE'):
+                    self.consume()
+                    node = {"type": "symbol", "value": next_tok.value}
+                else:
+                    node = self.parse_item(break_on, stop_condition)
                 if node:
-                    node["scale_modifier"] = tok.value
-            elif tok.value in ('\\partial', '\\nabla', '\\infty', '\\to', '\\sin', '\\cos', '\\log', '\\ln', '\\div', '\\times', '\\Delta', '\\cdot', '\\approx', '\\sim', '\\propto', '\\ast', '\\star', '\\delta', '\\diracdelta', '\\imath', '\\jmath', '\\quad', '\\qquad', '\\,', '\\;', '\\:', '\\!', '\\|', '\\ge', '\\le', '\\geq', '\\leq', '\\Rightarrow', '\\Leftarrow', '\\Leftrightarrow', '\\rightarrow', '\\leftarrow', '\\leftrightarrow', '\\neq', '\\{', '\\}', '\\langle', '\\rangle', '\\mid', '\\implies', '\\dots', '\\cdots', '\\ddots', '\\vdots'):
+                    node["scale_modifier"] = cmd
+            elif tok.value in SYMBOL_COMMANDS:
                 self.consume()
                 node = {"type": "symbol", "value": tok.value}
             elif tok.value in ('\\limits', '\\nolimits'):
                 self.consume()
-                return self.parse_item()
+                return self.parse_item(break_on, stop_condition)
             elif tok.value == '\\end':
                 self.consume()
                 # Ignore \end and its argument if encountered outside an environment
@@ -307,32 +360,41 @@ class LatexMathParser:
         elif tok.type == 'OPERATOR':
             self.consume()
             node = {"type": "operator", "value": tok.value}
+        elif tok.type in ('MISC', 'COMMA', 'AMPERSAND'):
+            self.consume()
+            node = {"type": "symbol", "value": tok.value}
         else:
             self.consume()
             node = {"type": "symbol", "value": tok.value}
             
-        if node:
+        if node and allow_postfix:
             node = self.parse_postfix_scripts(node)
         return node
 
     def parse_postfix_scripts(self, base_node: Dict[str, Any]) -> Dict[str, Any]:
-        """Parses superscripts (^) and subscripts (_) attached to a base node."""
+        """Parses superscripts (^), subscripts (_) and primes (') attached to a base node."""
         node = base_node
-        while self.current().type in ('CARET', 'UNDERSCORE'):
+        while self.current().type in ('CARET', 'UNDERSCORE', 'PRIME'):
             tok = self.consume()
-            arg = self.parse_required_argument()
-            if tok.type == 'CARET':
+            if tok.type == 'PRIME':
+                # Treat ' as ^\prime. Standard LaTeX can have multiple primes like g''
+                prime_items = [{"type": "symbol", "value": "\\prime"}] * len(tok.value)
+                exponent = {"type": "sequence", "items": prime_items} if len(prime_items) > 1 else prime_items[0]
+                node = {"type": "power", "base": node, "exponent": exponent}
+            elif tok.type == 'CARET':
+                arg = self.parse_required_argument()
                 node = {"type": "power", "base": node, "exponent": arg}
             else:
+                arg = self.parse_required_argument()
                 node = {"type": "subscript", "base": node, "subscript": arg}
         return node
 
-    def parse_required_argument(self) -> Optional[Dict[str, Any]]:
+    def parse_required_argument(self, allow_postfix: bool = True) -> Optional[Dict[str, Any]]:
         """Parses a required argument, which can be a brace-enclosed group or a single item."""
         if self.current().type == 'LBRACE':
             return self.parse_group()
         else:
-            return self.parse_item()
+            return self.parse_item(allow_postfix=allow_postfix)
 
     def _with_isolated_stops(self, func, *args, **kwargs):
         old_stops = self.stop_conditions
@@ -367,7 +429,7 @@ class LatexMathParser:
         return {"type": "group", "content": node, "style": "brackets"}
 
     def parse_left_right(self) -> Dict[str, Any]:
-        """Parses a \left ... \right group."""
+        r"""Parses a \left ... \right group."""
         self.consume('COMMAND') # \left
         left_delim = self.consume()
         
@@ -393,7 +455,7 @@ class LatexMathParser:
     def parse_fraction(self, break_on: Optional[Set[str]] = None, stop_condition: Optional[Callable[[], bool]] = None) -> Dict[str, Any]:
         """Parses a \\frac{num}{den} command and detects derivatives."""
         if break_on is None: break_on = set()
-        self.consume('COMMAND') # \frac
+        cmd_tok = self.consume('COMMAND') # \frac, \dfrac, or \tfrac
         numerator = self.parse_required_argument()
         denominator = self.parse_required_argument()
         
@@ -414,7 +476,8 @@ class LatexMathParser:
         return {
             "type": "fraction",
             "numerator": numerator,
-            "denominator": denominator
+            "denominator": denominator,
+            "style": cmd_tok.value[1:] # 'frac', 'dfrac', or 'tfrac'
         }
 
     def _check_derivative(self, num: Optional[Dict[str, Any]], den: Optional[Dict[str, Any]]) -> Tuple[bool, Any, Any, bool]:
@@ -513,7 +576,7 @@ class LatexMathParser:
                 self.consume()
                 continue
             tok = self.consume()
-            arg = self.parse_required_argument()
+            arg = self.parse_required_argument(allow_postfix=False)
             if tok.type == 'CARET': upper_bound = arg
             else: lower_bound = arg
             
@@ -545,7 +608,7 @@ class LatexMathParser:
                 self.consume()
                 continue
             tok = self.consume()
-            arg = self.parse_required_argument()
+            arg = self.parse_required_argument(allow_postfix=False)
             if tok.type == 'CARET': upper_bound = arg
             else: lower_bound = arg
             
@@ -583,6 +646,27 @@ class LatexMathParser:
             env_name += self.consume().value
         if self.current().type == 'RBRACE':
             self.consume('RBRACE')
+
+        if self.current().type == 'LBRACKET':
+            self.consume('LBRACKET')
+            while self.current().type not in ('EOF', 'RBRACKET'):
+                self.consume()
+            if self.current().type == 'RBRACKET':
+                self.consume('RBRACKET')
+
+        if env_name in ('array', 'tabular', 'tabular*', 'alignat', 'alignat*', 'alignedat', 'alignedat*'):
+            required_specs = 2 if env_name == 'tabular*' else 1
+            for _ in range(required_specs):
+                if self.current().type == 'LBRACE':
+                    depth = 0
+                    while self.current().type != 'EOF':
+                        if self.current().type == 'LBRACE':
+                            depth += 1
+                        elif self.current().type == 'RBRACE':
+                            depth -= 1
+                        self.consume()
+                        if depth == 0:
+                            break
         
         rows = []
         current_row = []
@@ -602,25 +686,44 @@ class LatexMathParser:
                             end_name += self.consume().value
                         if self.current().type == 'RBRACE':
                             self.consume('RBRACE')
-                    break
+                        
+                        # Only break if it's OUR environment
+                        if end_name.strip().replace(' ', '') == env_name.strip().replace(' ', ''):
+                            break
+                        else:
+                            # If it's NOT our environment, we should probably record it as content
+                            # and keep going. This handles cases where document_parser might have 
+                            # included nested environments or misidentified something.
+                            current_cell.append({"type": "symbol", "value": "\\end{" + end_name + "}"})
+                            continue
+                    else:
+                        break
+
+                if tok.type == 'COMMAND' and tok.value in ('\\hline', '\\cline', '\\toprule', '\\midrule', '\\bottomrule', '\\hdashline'):
+                    self.consume()
+                    if tok.value == '\\cline' and self.current().type == 'LBRACE':
+                        self.parse_group()
+                    continue
                     
                 if tok.type == 'AMPERSAND':
                     self.consume()
                     current_row.append(self._make_sequence(current_cell))
                     current_cell = []
+                    continue
                 elif tok.type == 'NEWLINE':
                     self.consume()
                     # Consume optional argument like \\[4pt]
-                    if self.current().type == 'MISC' and self.current().value == '[':
-                        self.consume() # [
-                        while self.current().type != 'EOF' and not (self.current().type == 'MISC' and self.current().value == ']'):
+                    if self.current().type == 'LBRACKET':
+                        self.consume('LBRACKET')
+                        while self.current().type != 'EOF' and self.current().type != 'RBRACKET':
                             self.consume()
-                        if self.current().type == 'MISC' and self.current().value == ']':
-                            self.consume() # ]
+                        if self.current().type == 'RBRACKET':
+                            self.consume('RBRACKET')
                     current_row.append(self._make_sequence(current_cell))
                     rows.append(current_row)
                     current_row = []
                     current_cell = []
+                    continue
                 else:
                     start_pos = self.pos
                     item = self.parse_expression(
@@ -629,10 +732,14 @@ class LatexMathParser:
                     )
                     if item:
                         current_cell.append(item)
-                    if self.pos == start_pos:
+                    
+                    if self.pos == start_pos and self.current().type not in ('EOF', 'AMPERSAND', 'NEWLINE'):
                         # parse_expression didn't consume anything (e.g., unmatched RBRACE)
                         # Consume to avoid infinite loop
                         tok = self.consume()
+                        if tok.type == 'COMMAND' and tok.value == '\\end':
+                            # Should not happen as it's checked earlier, but safety first
+                            break
                         current_cell.append({"type": "symbol", "value": tok.value})
                         
             if current_cell or current_row:
@@ -707,7 +814,7 @@ if __name__ == "__main__":
     ]
 
     for expr in test_expressions:
-        print(f"\n--- Parsing: {expr} ---")
+        print("\n--- Parsing: {} ---".format(expr))
         try:
             ast = parse_latex_math(expr)
             print(json.dumps(ast, indent=2))

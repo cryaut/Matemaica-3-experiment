@@ -3,14 +3,17 @@ import os
 import json
 from latex_parser import parse_latex_math, ParseError
 from document_parser import parse_document
-from layout_engine import layout_document, layout_ast
+from layout_engine import layout_document, layout_ast, set_custom_symbols
 
-def render_expression(expression: str, input_mode: str, variation_level: str, seed: int | None, output_format: str, page_style: str = "Blank", ink_color: str = "#333333") -> dict:
+def render_expression(expression: str, input_mode: str, variation_level: str, seed: int | None, output_format: str, page_style: str = "Blank", ink_color: str = "#333333", custom_symbols: list | None = None) -> dict:
     """
     Backend stub for the Handwritten Math Rendering System.
     Parses LaTeX into AST and uses the 2D layout engine to generate SVG.
     """
     
+    set_custom_symbols(custom_symbols or [])
+    notes = []
+
     # 1. Basic Validation & Error Handling
     if not expression.strip():
         return {
@@ -33,33 +36,36 @@ def render_expression(expression: str, input_mode: str, variation_level: str, se
             # 2. Multiple spaces (likely a sentence)
             # 3. No common math operators at the start
             is_doc = any(marker in expression for marker in [
-                '\\[', '\\(', '\\textbf', '\\section', '\\subsection', 
-                '\\begin', '\\itemize', '\\enumerate', '$$', '\\item',
-                '\\text{', '\\mathrm{', '\\textit{', '\\newpage', '\\newage'
+                '\\[', '\\(', '\\textbf', '\\section', '\\subsection', '\\subsubsection', '\\paragraph',
+                '\\begin', '\\itemize', '\\enumerate', '\\item',
+                '\\newpage', '\\newage', '\\documentclass'
             ])
             
+            # If it has significant text as well as some math markers
             if not is_doc:
-                # If it has multiple spaces and doesn't look like a simple math expression, treat as doc
-                # Math expressions usually have operators and few spaces
+                has_math = any(m in expression for m in ['$', '\\frac', '\\sum', '\\int', '\\lim', '\\alpha', '\\beta', '\\gamma'])
                 space_count = expression.count(' ')
-                if space_count > 2:
-                    # Check for words (2+ letters)
-                    import re
-                    words = re.findall(r'\b[a-zA-Z]{2,}\b', expression)
-                    math_symbols_count = sum(1 for c in expression if c in "_^\\=+-*/")
-                    if len(words) > 3 and math_symbols_count < len(words):
-                        is_doc = True
+                # If it has many spaces and at least one math marker, or very many spaces, it's a document
+                if (space_count > 5 and has_math) or space_count > 10:
+                    is_doc = True
             
             if is_doc:
                 doc_ast = parse_document(expression)
                 pages = layout_document(doc_ast, max_width=800, scale=1.0)
                 is_document_mode = True
             else:
-                # Pure math expression
-                ast = parse_latex_math(expression)
-                layout = layout_ast(ast, scale=1.0)
-                pages = [layout]
-                is_document_mode = False
+                try:
+                    # Pure math expression
+                    ast = parse_latex_math(expression)
+                    layout = layout_ast(ast, scale=1.0)
+                    pages = [layout]
+                    is_document_mode = False
+                except Exception:
+                    # Fallback to document mode if pure math parsing fails
+                    doc_ast = parse_document(expression)
+                    pages = layout_document(doc_ast, max_width=800, scale=1.0)
+                    is_document_mode = True
+            
         else:
             ast = parse_latex_math(expression)
             layout = layout_ast(ast, scale=1.0)
@@ -80,6 +86,28 @@ def render_expression(expression: str, input_mode: str, variation_level: str, se
             "output_files": {"svg": "", "pdf": "", "png": ""},
             "notes": [f"Parse Error: {str(e)}"]
         }
+
+    import base64
+    font_b64 = ""
+    try:
+        font_path = os.path.join(os.getcwd(), "public", "WaHandwriting-Regular.ttf")
+        if os.path.exists(font_path):
+            with open(font_path, "rb") as f:
+                font_b64 = base64.b64encode(f.read()).decode('utf-8')
+    except Exception as e:
+        notes.append(f"Font embedding failed: {str(e)}")
+
+    font_style = ""
+    if font_b64:
+        font_style = f"""
+        <style>
+        @font-face {{
+            font-family: 'WaHandwriting-Regular';
+            src: url('data:font/ttf;base64,{font_b64}') format('truetype');
+            font-weight: normal;
+            font-style: normal;
+        }}
+        </style>"""
 
     svg_pages = []
     for page in pages:
@@ -108,6 +136,7 @@ def render_expression(expression: str, input_mode: str, variation_level: str, se
             bg_rect = f'<rect width="100%" height="100%" fill="#fafafa" rx="10"/>\n{bg_lines}'
             
         svg_content = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {view_width} {view_height}" width="{view_width}" height="{view_height}">
+            <defs>{font_style}</defs>
             {bg_rect}
             {svg_inner}
         </svg>"""
@@ -140,6 +169,7 @@ def render_expression(expression: str, input_mode: str, variation_level: str, se
         "output_files": {
             "svg": "" # We don't write files anymore, we send the content directly
         },
+        "svg_content": svg_pages[0] if svg_pages else "",
         "svg_pages": svg_pages,
         "notes": notes
     }

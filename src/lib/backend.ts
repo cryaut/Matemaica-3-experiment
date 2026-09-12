@@ -6,6 +6,14 @@ export interface RenderResult {
   detectedStructures?: string[];
 }
 
+export interface CustomSymbolPayload {
+  latex: string;
+  svg: string;
+  width: number;
+  height: number;
+  baseline: number;
+}
+
 export async function renderExpression(
   expression: string,
   mode: string,
@@ -13,7 +21,8 @@ export async function renderExpression(
   seed: number | null,
   format: string,
   pageStyle: string = 'Blank',
-  inkColor: string = '#333333'
+  inkColor: string = '#333333',
+  customSymbols: CustomSymbolPayload[] = []
 ): Promise<RenderResult> {
   try {
     const response = await fetch('/api/render', {
@@ -28,7 +37,8 @@ export async function renderExpression(
         seed,
         output_format: format,
         page_style: pageStyle,
-        ink_color: inkColor
+        ink_color: inkColor,
+        custom_symbols: customSymbols
       }),
     });
 
@@ -36,7 +46,14 @@ export async function renderExpression(
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
-    const data = await response.json();
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      console.error("Failed to parse backend response as JSON. Raw response:", text);
+      throw new Error(`Invalid JSON response from server: ${text.substring(0, 100)}...`);
+    }
 
     if (data.status === 'error') {
       return {

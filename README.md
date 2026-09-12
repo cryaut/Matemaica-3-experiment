@@ -1,40 +1,54 @@
-# Handwritten Math Renderer UI
+# Handwritten Math Renderer
 
-A simple, clean, and fast user interface for the Handwritten Math Rendering system, built with [Streamlit](https://streamlit.io/).
+React/Vite frontend for rendering LaTeX and tokenized mathematical expressions as handwritten-style SVG. The application uses an Express server to call the Python parser and layout engine.
 
-## Layout Overview
+> **Security status:** This project is not ready for public multi-user deployment. Read [SECURITY.md](SECURITY.md) before exposing the server to untrusted traffic.
 
-The interface is designed with usability in mind, utilizing a clean three-panel layout:
-1. **Left Panel (Input)**: Contains the input mode selector (LaTeX/Tokens), the main expression text area, action buttons (Load Example, Clear, Render), and an expandable settings section for variation level, seed, and output format.
-2. **Center Panel (Preview)**: Displays the generated handwritten output. It uses a clean placeholder when idle and renders the generated SVG directly in the browser with a scrollable container.
-3. **Right Panel (Status & Details)**: Shows the current render status, metrics (symbols used, detected structures), and provides a one-click download button for the generated file.
+## Stack
 
-At the bottom, two clear sections outline the **Supported Symbols and Structures** and the **Current Limitations**, ensuring the user understands the system's capabilities.
+- React and Vite for the interface.
+- Express and `tsx` for the local API server.
+- Python parser and layout engine for formula rendering.
+- pnpm for JavaScript dependency management.
 
-## Backend Connection
+## Run locally
 
-The UI connects to the backend via a simple contract defined in `backend.py`. 
-The `render_expression()` function takes the user inputs (`expression`, `input_mode`, `variation_level`, `seed`, `output_format`) and returns a dictionary containing the status, file paths, and metadata. 
+Prerequisites:
 
-The frontend uses Streamlit's `st.session_state` to store this result and dynamically update the Preview and Status panels without losing the user's input.
+- Node.js 20 or newer.
+- pnpm 11 or newer.
+- Python 3.10 or newer.
 
-## How to Run Locally
+Install the JavaScript dependencies:
 
-1. Install the requirements:
-   ```bash
-   pip install -r requirements.txt
-   ```
-2. Run the Streamlit app:
-   ```bash
-   streamlit run app.py
-   ```
-3. Open the provided local URL in your browser (usually `http://localhost:8501`).
+```bash
+pnpm install
+```
 
-## Example Interaction
+Install the Python dependencies:
 
-1. Select **LaTeX** as the Input Mode.
-2. Click **Load Example** to automatically insert `\int_0^1 x^2 \, dx`.
-3. Click **Render**.
-4. The backend stub will simulate processing, detect the `integral` and `power` structures, and generate a dummy SVG.
-5. The Center Panel will display the simulated handwritten SVG.
-6. The Right Panel will update to show "Done", list the detected structures, and provide a button to download the SVG.
+```bash
+python -m pip install -r requirements.txt
+```
+
+Start the application:
+
+```bash
+pnpm dev
+```
+
+Open `http://localhost:3000` unless the server reports a different port.
+
+## Validation
+
+```bash
+pnpm run lint
+pnpm run build
+pytest -q
+```
+
+The project currently requires no environment variables. Keep any future server-only secrets out of Vite and never commit a real `.env` file. The placeholder file is [`.env.example`](.env.example).
+
+## Security
+
+The current release contains documented pending security work around custom SVG sanitization, API access control, request limits, process isolation, production middleware, and dependency updates. See [SECURITY.md](SECURITY.md) before deployment.

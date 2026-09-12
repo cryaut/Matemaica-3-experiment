@@ -6,3 +6,14 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local sessions, caches, and machine-specific files
+.antigravity/
+.pnpm-store/
+.pytest_cache/
+__pycache__/
+.vscode/
+
+# Local request/response captures may contain private formulas or user data
+test_req.json
+test_out.json

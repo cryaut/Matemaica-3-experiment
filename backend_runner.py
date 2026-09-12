@@ -17,8 +17,9 @@ def main():
         output_format = req.get("output_format", "SVG")
         page_style = req.get("page_style", "Blank")
         ink_color = req.get("ink_color", "#333333")
+        custom_symbols = req.get("custom_symbols", [])
         
-        result = render_expression(expression, input_mode, variation_level, seed, output_format, page_style, ink_color)
+        result = render_expression(expression, input_mode, variation_level, seed, output_format, page_style, ink_color, custom_symbols)
         
         # We don't read from files anymore, the backend returns the content directly
         print(json.dumps(result))

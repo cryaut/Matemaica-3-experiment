@@ -1,5 +1,1 @@
-{
-  "name": "",
-  "description": "",
-  "requestFramePermissions": []
-}
+{"name":"LaTeX Math Renderer","description":"A robust LaTeX parser and renderer for complex mathematical documents and equations, with a handwritten aesthetic.","requestFramePermissions":[]}
