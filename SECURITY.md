@@ -1,29 +1,14 @@
-# Security Status
+# Security Notice
 
 This project is not yet ready to be deployed as a public multi-user service.
 
-## Fixed in this pass
+## Before public deployment
 
-- Removed the local `.env` file that contained a Gemini API key.
-- Removed the Vite configuration that could inject `GEMINI_API_KEY` into the browser bundle.
-- Removed unused Gemini and dotenv packages from the client project.
-- Added ignore rules for local sessions, package caches, Python caches, editor settings, and request captures.
-
-The previously exposed Gemini key must still be revoked in Google AI Studio or Google Cloud. Do not reuse it.
-
-## Pending security fixes before public deployment
-
-- Sanitize custom SVG input before rendering it. The frontend currently renders SVG strings with `dangerouslySetInnerHTML`, and the API accepts custom symbol markup from requests.
-- Add authentication or an equivalent access boundary for `/api/render`.
-- Add request schema validation, strict body limits, rate limiting, process timeouts, and concurrency limits. Rendering currently starts a Python process per request.
-- Stop logging request content and add security headers/content security policy.
-- Ensure production deployments never expose Vite development middleware.
+- Treat custom handwritten symbols as untrusted input until their SVG content is safely sanitized.
+- Protect the rendering endpoint with authentication or another trusted access boundary.
+- Add input validation, request-size limits, rate limiting, timeouts, and concurrency limits.
+- Avoid sending sensitive personal information or private documents through the service.
+- Use production middleware only, with security headers and an appropriate content security policy.
 - Upgrade and re-audit JavaScript and Python dependencies before release.
 
-Until these items are addressed, keep the service on a trusted local network and do not accept untrusted public traffic.
-
-## Repository history
-
-- The GitHub repository currently exposes only the `main` branch and has no tags or releases.
-- Legacy cache files and local request captures were removed from the reachable Git history.
-- If a secret is ever committed, revoke it first and rewrite the affected history before sharing the repository.
+Until these protections are in place, keep the service on a trusted local network and do not accept untrusted public traffic.
